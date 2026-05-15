@@ -3,8 +3,162 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Cosmic Vibe v2</title>
-  <link rel="stylesheet" href="styles.css">
+  <title>Cosmic Vibe v3.0</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background-color: #000;
+      color: #fff;
+      font-family: 'Courier New', Courier, monospace; /* Pixel-ish font */
+      touch-action: none; /* Prevent default touch actions like scrolling */
+    }
+
+    #gameCanvas {
+      display: block;
+      cursor: none; /* Hide cursor during gameplay */
+    }
+
+    #gameCanvas.game-over-cursor {
+      cursor: default; /* Show cursor on game over */
+    }
+
+    #uiLayer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      display: flex;
+      justify-content: space-between;
+      padding: 15px;
+      box-sizing: border-box;
+    }
+
+    #topHUD {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    #timerDisplay {
+      font-size: 28px;
+      font-weight: bold;
+      text-shadow: 2px 2px #ff00ff; /* Neon aesthetic */
+    }
+
+    #overheatContainer {
+      width: 150px;
+      height: 15px;
+      background-color: rgba(255, 255, 255, 0.2);
+      border: 2px solid #555;
+      border-radius: 4px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    #overheatBar {
+      height: 100%;
+      width: 0%;
+      background-color: #0f0;
+      transition: background-color 0.1s, width 0.05s linear;
+    }
+
+    .pulse {
+      animation: pulseAnim 0.3s infinite alternate;
+    }
+
+    @keyframes pulseAnim {
+      0% { opacity: 1; transform: scale(1); box-shadow: 0 0 5px #f00; }
+      100% { opacity: 0.6; transform: scale(1.05); box-shadow: 0 0 15px #f00; }
+    }
+
+    #livesDisplay {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+
+    .life-icon {
+      width: 25px;
+      height: 25px;
+      position: relative;
+    }
+
+    /* Drawing a mini ship for the life icon via CSS triangles/shapes */
+    .life-icon::before {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      border-left: 12.5px solid transparent;
+      border-right: 12.5px solid transparent;
+      border-bottom: 25px solid #ddd;
+    }
+    .life-icon::after {
+      content: '';
+      position: absolute;
+      bottom: 5px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 8px;
+      height: 8px;
+      background-color: #0ff; /* Cockpit color */
+    }
+
+    #gameOverScreen {
+      display: none;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      background: rgba(0, 0, 0, 0.85);
+      padding: 40px;
+      border: 4px solid #0ff;
+      border-radius: 10px;
+      pointer-events: auto;
+      box-shadow: 0 0 20px #0ff;
+    }
+
+    #gameOverScreen h1 {
+      font-size: 48px;
+      margin: 0 0 20px 0;
+      text-shadow: 4px 4px #f00;
+      color: #fff;
+    }
+
+    #finalTime {
+      font-size: 24px;
+      margin-bottom: 30px;
+      color: #ff0;
+    }
+
+    button {
+      background-color: #0ff;
+      color: #000;
+      border: none;
+      padding: 15px 30px;
+      font-size: 24px;
+      font-family: 'Courier New', Courier, monospace;
+      font-weight: bold;
+      cursor: pointer;
+      box-shadow: 4px 4px #00a;
+      transition: transform 0.1s, background-color 0.2s;
+    }
+
+    button:hover {
+      background-color: #fff;
+    }
+
+    button:active {
+      transform: translate(2px, 2px);
+      box-shadow: 2px 2px #00a;
+    }
+  </style>
 </head>
 <body>
 
@@ -26,6 +180,671 @@
     <button id="restartBtn">RESTART</button>
   </div>
 
-  <script src="main.js"></script>
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const timerDisplay = document.getElementById('timerDisplay');
+    const livesDisplay = document.getElementById('livesDisplay');
+    const gameOverScreen = document.getElementById('gameOverScreen');
+    const finalTimeDisplay = document.getElementById('finalTime');
+    const restartBtn = document.getElementById('restartBtn');
+    const overheatBar = document.getElementById('overheatBar');
+
+    // Audio Context (started on first interaction)
+    let audioCtx = null;
+    let ambientOsc = null;
+    let ambientGain = null;
+
+    function initAudio() {
+      if (audioCtx) return;
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      
+      // Ambient "space hum" (Liquid DnB vibe)
+      ambientOsc = audioCtx.createOscillator();
+      ambientOsc.type = 'sine';
+      ambientOsc.frequency.setValueAtTime(55, audioCtx.currentTime); // Low sub bass
+      
+      ambientGain = audioCtx.createGain();
+      ambientGain.gain.setValueAtTime(0.1, audioCtx.currentTime); // Subtle volume
+      
+      ambientOsc.connect(ambientGain);
+      ambientGain.connect(audioCtx.destination);
+      ambientOsc.start();
+    }
+
+    function playPew() {
+      if (!audioCtx) return;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'square';
+      // Rapid frequency drop for "pew"
+      osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.1);
+      
+      gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+      
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.1);
+    }
+
+    function playBoom() {
+      if (!audioCtx) return;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sawtooth';
+      // Low frequency drop for explosion
+      osc.frequency.setValueAtTime(100, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(20, audioCtx.currentTime + 0.3);
+      
+      gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+      
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.3);
+    }
+
+    // Game state
+    let isGameOver = false;
+    let startTime = 0;
+    let survivalTime = 0;
+    let animationFrameId;
+    let screenShakeFrames = 0;
+    let flashFrames = 0;
+
+    // Entities
+    let player = {
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
+      radius: 15,
+      color: '#0ff' // Cyan
+    };
+
+    let lives = 3;
+    let isShooting = false;
+    let lastShotTime = 0;
+    let invulnerableUntil = 0;
+
+    // Overheat logic
+    let heat = 0;
+    let isOverheated = false;
+    const MAX_HEAT = 100;
+    const HEAT_PER_SHOT = 15;
+    const COOLING_RATE = 0.5; // per frame
+    const FIRE_RATE = 150; // ms between shots
+
+    let asteroids = [];
+    let stars = [];
+    let lasers = [];
+    let particles = [];
+
+    // Game config
+    const ASTEROID_BASE_RADIUS = 35;
+    let asteroidBaseSpeed = 3; // Initial speed
+    let asteroidSpawnRate = 800; // ms
+    let lastSpawnTime = 0;
+    let currentLevel = 0;
+    let asteroidColor = '#ff00ff'; // Initial neon color
+
+    const neonColors = [
+      '#ff00ff', '#00ffff', '#ffff00', '#ff0000', 
+      '#00ff00', '#ff8800', '#ff0088', '#8800ff',
+      '#00ff88', '#88ff00'
+    ];
+
+    function resize() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // Input - Movement
+    function updatePlayerPos(e) {
+      if (isGameOver) return;
+      
+      let clientX, clientY;
+      if (e.type === 'touchmove') {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+      } else {
+        clientX = e.clientX;
+        clientY = e.clientY;
+      }
+      player.x = clientX;
+      player.y = clientY;
+    }
+
+    window.addEventListener('mousemove', updatePlayerPos);
+    window.addEventListener('touchmove', updatePlayerPos, { passive: false });
+
+    // Input - Shooting
+    function handlePointerDown() {
+      initAudio();
+      if (!isGameOver) isShooting = true;
+    }
+    function handlePointerUp() {
+      isShooting = false;
+    }
+    window.addEventListener('mousedown', handlePointerDown);
+    window.addEventListener('mouseup', handlePointerUp);
+    window.addEventListener('touchstart', handlePointerDown);
+    window.addEventListener('touchend', handlePointerUp);
+
+    function updateLivesDisplay() {
+      livesDisplay.innerHTML = '';
+      for (let i = 0; i < lives; i++) {
+        const icon = document.createElement('div');
+        icon.className = 'life-icon';
+        livesDisplay.appendChild(icon);
+      }
+    }
+
+    function updateOverheatUI() {
+      overheatBar.style.width = `${heat}%`;
+      
+      // Pulse effect if heat > 80
+      const container = document.getElementById('overheatContainer');
+      if (heat > 80) {
+        container.classList.add('pulse');
+      } else {
+        container.classList.remove('pulse');
+      }
+
+      if (isOverheated) {
+        overheatBar.style.backgroundColor = '#f00';
+      } else if (heat > 75) {
+        overheatBar.style.backgroundColor = '#fa0';
+      } else {
+        overheatBar.style.backgroundColor = '#0f0';
+      }
+    }
+
+    // Init background stars
+    function initStars() {
+      stars = [];
+      for (let i = 0; i < 150; i++) {
+        // Layer 1 (slow, small), Layer 2 (medium), Layer 3 (fast, large)
+        let layer = Math.random();
+        let speed, size;
+        if (layer < 0.6) { speed = 0.2; size = 1; }
+        else if (layer < 0.9) { speed = 0.5; size = 2; }
+        else { speed = 1.0; size = 3; }
+        
+        stars.push({
+          x: Math.random() * canvas.width,
+          y: Math.random() * canvas.height,
+          size: size,
+          speed: speed,
+          baseColor: Math.random() > 0.5 ? '#aaaaaa' : '#ffffff',
+          flickerOffset: Math.random() * Math.PI * 2,
+          flickerSpeed: Math.random() * 0.05 + 0.02
+        });
+      }
+    }
+
+    // Draw & Update Stars (Parallax)
+    function drawStars(timestamp) {
+      for (let star of stars) {
+        // Move star
+        star.y += star.speed;
+        if (star.y > canvas.height) {
+          star.y = 0;
+          star.x = Math.random() * canvas.width;
+        }
+        
+        // Flickering logic
+        let alpha = 0.5 + Math.sin(timestamp * star.flickerSpeed + star.flickerOffset) * 0.5;
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = star.baseColor;
+        ctx.fillRect(star.x, star.y, star.size, star.size);
+      }
+      ctx.globalAlpha = 1.0;
+    }
+
+    function createAsteroid(x, y, speed, color) {
+      let numVertices = 8 + Math.floor(Math.random() * 5); // 8 to 12 points
+      let vertices = [];
+      let radius = ASTEROID_BASE_RADIUS + (Math.random() * 10 - 5);
+      for(let i=0; i<numVertices; i++) {
+        let angle = (i / numVertices) * Math.PI * 2;
+        let r = radius * (0.6 + Math.random() * 0.5); // Irregular distance from center
+        vertices.push({angle, r});
+      }
+      let craters = [];
+      for(let i=0; i<3; i++) {
+         craters.push({
+           x: (Math.random()-0.5) * radius,
+           y: (Math.random()-0.5) * radius,
+           r: Math.random() * 5 + 2
+         });
+      }
+      return {
+        x, y, vy: speed, radius, vertices, craters, color, rotation: 0, rotSpeed: (Math.random()-0.5)*0.1,
+        hp: Math.floor(Math.random() * 2) + 2, // 2 to 3 hits
+        hitFlashUntil: 0 // timestamp
+      };
+    }
+
+    function spawnAsteroid(timestamp) {
+      if (timestamp - lastSpawnTime > asteroidSpawnRate) {
+        asteroids.push(createAsteroid(
+          Math.random() * (canvas.width - ASTEROID_BASE_RADIUS * 2) + ASTEROID_BASE_RADIUS,
+          -ASTEROID_BASE_RADIUS * 2,
+          asteroidBaseSpeed + Math.random() * 1.5,
+          asteroidColor
+        ));
+        lastSpawnTime = timestamp;
+      }
+    }
+
+    function createBurst(x, y, color) {
+      for(let i=0; i<25; i++) {
+        let angle = Math.random() * Math.PI * 2;
+        let speed = Math.random() * 5 + 1;
+        particles.push({
+          x, y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          life: 1.0,
+          decay: Math.random() * 0.03 + 0.02,
+          color: color,
+          size: Math.random() * 3 + 1
+        });
+      }
+    }
+
+    function spawnTrail(x, y, color) {
+      // Small trail particle behind asteroid
+      particles.push({
+        x: x + (Math.random()-0.5)*20,
+        y: y - 15,
+        vx: (Math.random()-0.5)*0.5,
+        vy: -Math.random()*1.5, // move upwards relative to asteroid
+        life: 0.6,
+        decay: 0.04,
+        color: color,
+        size: Math.random() * 2 + 1
+      });
+    }
+
+    function resetGame() {
+      isGameOver = false;
+      gameOverScreen.style.display = 'none';
+      canvas.classList.remove('game-over-cursor');
+      
+      asteroids = [];
+      lasers = [];
+      particles = [];
+      
+      asteroidBaseSpeed = 3;
+      asteroidSpawnRate = 800;
+      currentLevel = 0;
+      asteroidColor = neonColors[0];
+      lives = 3;
+      updateLivesDisplay();
+      
+      isShooting = false;
+      invulnerableUntil = 0;
+      heat = 0;
+      isOverheated = false;
+      updateOverheatUI();
+      
+      player.x = window.innerWidth / 2;
+      player.y = window.innerHeight / 2;
+
+      initStars();
+      
+      requestAnimationFrame((timestamp) => {
+        startTime = timestamp;
+        lastSpawnTime = timestamp;
+        loop(timestamp);
+      });
+    }
+
+    function drawShip(timestamp) {
+      let isInvulnerable = timestamp < invulnerableUntil;
+      // Blink effect (2 seconds = 2000ms)
+      if (isInvulnerable && Math.floor(timestamp / 100) % 2 === 0) {
+        return;
+      }
+
+      ctx.save();
+      ctx.translate(player.x, player.y);
+      
+      // Flickering Engine Flame
+      if (Math.random() > 0.2) {
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = '#f80';
+        ctx.fillStyle = '#f80'; // orange
+        ctx.beginPath();
+        ctx.moveTo(-6, 12);
+        ctx.lineTo(6, 12);
+        ctx.lineTo(0, 25 + Math.random() * 10);
+        ctx.fill();
+        
+        // inner bright flame
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = '#ff0';
+        ctx.fillStyle = '#ff0';
+        ctx.beginPath();
+        ctx.moveTo(-3, 12);
+        ctx.lineTo(3, 12);
+        ctx.lineTo(0, 18 + Math.random() * 5);
+        ctx.fill();
+        
+        ctx.shadowBlur = 0; // reset
+      }
+      
+      // Ship Body (Vector drawing)
+      ctx.fillStyle = '#ddd';
+      ctx.beginPath();
+      ctx.moveTo(0, -20);   // Nose
+      ctx.lineTo(15, 15);   // Right wing tip
+      ctx.lineTo(0, 10);    // Back center indent
+      ctx.lineTo(-15, 15);  // Left wing tip
+      ctx.closePath();
+      ctx.fill();
+
+      // Cockpit Window
+      ctx.fillStyle = player.color;
+      ctx.beginPath();
+      ctx.moveTo(0, -5);
+      ctx.lineTo(4, 5);
+      ctx.lineTo(-4, 5);
+      ctx.closePath();
+      ctx.fill();
+      
+      ctx.restore();
+    }
+
+    function drawAsteroid(a, timestamp) {
+      ctx.save();
+      ctx.translate(a.x, a.y);
+      ctx.rotate(a.rotation);
+      
+      // Flash white if hit recently
+      let isHit = timestamp < a.hitFlashUntil;
+      
+      // Polygon body
+      ctx.fillStyle = isHit ? '#fff' : '#333';
+      ctx.strokeStyle = isHit ? '#fff' : a.color;
+      ctx.lineWidth = 2;
+      
+      ctx.beginPath();
+      for(let i=0; i<a.vertices.length; i++) {
+        let v = a.vertices[i];
+        let px = Math.cos(v.angle) * v.r;
+        let py = Math.sin(v.angle) * v.r;
+        if (i===0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      if (!isHit) {
+        // Craters
+        ctx.fillStyle = '#111';
+        for(let c of a.craters) {
+          ctx.beginPath();
+          ctx.arc(c.x, c.y, c.r, 0, Math.PI*2);
+          ctx.fill();
+        }
+      }
+
+      ctx.restore();
+    }
+
+    function update(timestamp) {
+      survivalTime = (timestamp - startTime) / 1000;
+      
+      // Level progression every 10 seconds
+      const newLevel = Math.floor(survivalTime / 10);
+      if (newLevel > currentLevel) {
+        currentLevel = newLevel;
+        asteroidBaseSpeed += 1;
+        
+        let newColor = asteroidColor;
+        while(newColor === asteroidColor) {
+          newColor = neonColors[Math.floor(Math.random() * neonColors.length)];
+        }
+        asteroidColor = newColor;
+        
+        if (asteroidSpawnRate > 300) {
+          asteroidSpawnRate -= 50;
+        }
+      }
+      
+      timerDisplay.innerText = `Time: ${survivalTime.toFixed(1)}s`;
+
+      spawnAsteroid(timestamp);
+
+      // Heat cooling
+      if (heat > 0) {
+        heat -= COOLING_RATE;
+        if (heat <= 0) {
+          heat = 0;
+          isOverheated = false;
+        }
+      }
+      updateOverheatUI();
+
+      // Shooting mechanics (Disabled while invulnerable)
+      if (isShooting && !isOverheated && timestamp > invulnerableUntil && timestamp - lastShotTime > FIRE_RATE) {
+        heat += HEAT_PER_SHOT;
+        if (heat >= MAX_HEAT) {
+          heat = MAX_HEAT;
+          isOverheated = true;
+        }
+        
+        lasers.push({
+          x: player.x,
+          y: player.y - 20, // offset from nose
+          vy: -15, // faster lasers
+          length: 20,
+          radius: 2 // for collision
+        });
+        flashFrames = 5; // Muzzle flash duration
+        playPew();
+        lastShotTime = timestamp;
+      }
+
+      // Update Lasers
+      for(let i = lasers.length - 1; i >= 0; i--) {
+        let l = lasers[i];
+        l.y += l.vy;
+        if (l.y < -30) {
+          lasers.splice(i, 1);
+        }
+      }
+
+      // Update Particles
+      for(let i = particles.length - 1; i >= 0; i--) {
+        let p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life -= p.decay;
+        if (p.life <= 0) {
+          particles.splice(i, 1);
+        }
+      }
+
+      // Update asteroids and check collisions
+      let playerHit = false;
+      for (let i = asteroids.length - 1; i >= 0; i--) {
+        let a = asteroids[i];
+        a.y += a.vy;
+        a.rotation += a.rotSpeed;
+        
+        // Spawn trail
+        if (Math.random() > 0.6) spawnTrail(a.x, a.y, a.color);
+
+        if (a.y > canvas.height + a.radius * 2) {
+          asteroids.splice(i, 1);
+          continue;
+        }
+
+        // Laser vs Asteroid (Circle collision)
+        let destroyed = false;
+        for (let j = lasers.length - 1; j >= 0; j--) {
+          let l = lasers[j];
+          let dx = a.x - l.x;
+          let dy = a.y - l.y;
+          let distSq = dx*dx + dy*dy;
+          if (distSq < (a.radius + l.radius) * (a.radius + l.radius)) {
+            // Collision
+            lasers.splice(j, 1);
+            a.hp--;
+            if (a.hp <= 0) {
+              playBoom();
+              screenShakeFrames = 10;
+              createBurst(a.x, a.y, a.color);
+              asteroids.splice(i, 1);
+              destroyed = true;
+            } else {
+              a.hitFlashUntil = timestamp + 100; // Flash white for 100ms
+            }
+            break;
+          }
+        }
+        if (destroyed) continue;
+
+        // Player vs Asteroid
+        if (timestamp > invulnerableUntil) {
+          let dx = player.x - a.x;
+          let dy = player.y - a.y;
+          if (dx*dx + dy*dy < (player.radius + a.radius) * (player.radius + a.radius)) {
+            playerHit = true;
+            break;
+          }
+        }
+      }
+
+      if (playerHit) {
+        lives--;
+        updateLivesDisplay();
+        playBoom();
+        screenShakeFrames = 20; // Major screen shake
+        createBurst(player.x, player.y, '#f00'); // explosion on ship
+        asteroids = []; // clear asteroids
+        
+        if (lives <= 0) {
+          isGameOver = true;
+          canvas.classList.add('game-over-cursor');
+        } else {
+          invulnerableUntil = timestamp + 2000; // exactly 2s invincibility
+        }
+      }
+    }
+
+    function draw(timestamp) {
+      ctx.save(); // Save pre-shake state
+      
+      // Screen Shake logic
+      if (screenShakeFrames > 0) {
+        let shakeIntensity = Math.min(screenShakeFrames, 10);
+        let dx = (Math.random() - 0.5) * shakeIntensity * 2;
+        let dy = (Math.random() - 0.5) * shakeIntensity * 2;
+        ctx.translate(dx, dy);
+        screenShakeFrames--;
+      }
+
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      drawStars(timestamp);
+
+      // Draw Particles
+      for(let p of particles) {
+        ctx.globalAlpha = p.life;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI*2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1.0;
+
+      // Draw Lasers (Red vector lines with dynamic glow)
+      for(let l of lasers) {
+        ctx.strokeStyle = '#f00';
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = '#f00';
+        
+        ctx.beginPath();
+        ctx.moveTo(l.x, l.y);
+        ctx.lineTo(l.x, l.y + l.length);
+        ctx.stroke();
+        
+        // Laser glow
+        ctx.globalAlpha = 0.5;
+        ctx.strokeStyle = '#f88';
+        ctx.lineWidth = 6;
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = '#f88';
+        ctx.stroke();
+        
+        // Reset shadow
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1.0;
+      }
+
+      // Draw Asteroids
+      for (let a of asteroids) {
+        drawAsteroid(a, timestamp);
+      }
+
+      // Draw Player
+      if (!isGameOver) {
+        drawShip(timestamp);
+        
+        // Muzzle Flash
+        if (flashFrames > 0) {
+          ctx.fillStyle = '#fff';
+          ctx.shadowBlur = 20;
+          ctx.shadowColor = '#fff';
+          ctx.beginPath();
+          ctx.arc(player.x, player.y - 20, flashFrames * 1.5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.shadowBlur = 0;
+          flashFrames--;
+        }
+      }
+      
+      ctx.restore(); // Restore pre-shake state
+    }
+
+    function loop(timestamp) {
+      if (isGameOver) {
+        draw(timestamp); // Draw one last time to show final explosion
+        gameOverScreen.style.display = 'block';
+        finalTimeDisplay.innerText = `You survived for ${survivalTime.toFixed(1)} seconds!`;
+        return; 
+      }
+
+      update(timestamp);
+      draw(timestamp);
+      
+      animationFrameId = requestAnimationFrame(loop);
+    }
+
+    restartBtn.addEventListener('click', resetGame);
+
+    // Initial Start
+    updateLivesDisplay();
+    updateOverheatUI();
+    initStars();
+    requestAnimationFrame((timestamp) => {
+      startTime = timestamp;
+      lastSpawnTime = timestamp;
+      loop(timestamp);
+    });
+  </script>
 </body>
 </html>
