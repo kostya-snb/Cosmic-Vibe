@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Cosmic Vibe</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background-color: #000;
+      color: #fff;
+      font-family: 'Courier New', Courier, monospace; /* Pixel-ish font */
+      touch-action: none; /* Prevent default touch actions like scrolling */
+    }
+
+    #gameCanvas {
+      display: block;
+    }
+
+    #uiLayer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    #timerDisplay {
+      position: absolute;
+      top: 15px;
+      left: 15px;
+      font-size: 28px;
+      font-weight: bold;
+      text-shadow: 2px 2px #ff00ff; /* Neon aesthetic */
+      pointer-events: none;
+    }
+
+    #gameOverScreen {
+      display: none;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      background: rgba(0, 0, 0, 0.85);
+      padding: 40px;
+      border: 4px solid #0ff;
+      border-radius: 10px;
+      pointer-events: auto;
+      box-shadow: 0 0 20px #0ff;
+    }
+
+    #gameOverScreen h1 {
+      font-size: 48px;
+      margin: 0 0 20px 0;
+      text-shadow: 4px 4px #f00;
+      color: #fff;
+    }
+
+    #finalTime {
+      font-size: 24px;
+      margin-bottom: 30px;
+      color: #ff0;
+    }
+
+    button {
+      background-color: #0ff;
+      color: #000;
+      border: none;
+      padding: 15px 30px;
+      font-size: 24px;
+      font-family: 'Courier New', Courier, monospace;
+      font-weight: bold;
+      cursor: pointer;
+      box-shadow: 4px 4px #00a;
+      transition: transform 0.1s, background-color 0.2s;
+    }
+
+    button:hover {
+      background-color: #fff;
+    }
+
+    button:active {
+      transform: translate(2px, 2px);
+      box-shadow: 2px 2px #00a;
+    }
+  </style>
+</head>
+<body>
+
+  <canvas id="gameCanvas"></canvas>
+  
+  <div id="uiLayer">
+    <div id="timerDisplay">Time: 0.0s</div>
+  </div>
+
+  <div id="gameOverScreen">
+    <h1>GAME OVER</h1>
+    <div id="finalTime">You survived for 0.0 seconds!</div>
+    <button id="restartBtn">RESTART</button>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const timerDisplay = document.getElementById('timerDisplay');
+    const gameOverScreen = document.getElementById('gameOverScreen');
+    const finalTimeDisplay = document.getElementById('finalTime');
+    const restartBtn = document.getElementById('restartBtn');
+
+    // Game state
+    let isGameOver = false;
+    let startTime = 0;
+    let survivalTime = 0;
+    let lastTime = 0;
+    let animationFrameId;
+
+    // Entities
+    let player = {
+      x: window.innerWidth / 2 - 20,
+      y: window.innerHeight / 2 - 20,
+      width: 40,
+      height: 40,
+      color: '#0ff' // Cyan player
+    };
+
+    let asteroids = [];
+    let stars = [];
+
+    // Game config
+    const ASTEROID_SIZE = 30;
+    let asteroidBaseSpeed = 3; // Initial speed
+    let asteroidSpawnRate = 800; // ms
+    let lastSpawnTime = 0;
+    let currentLevel = 0;
+    let asteroidColor = '#ff00ff'; // Initial neon color
+
+    const neonColors = [
+      '#ff00ff', '#00ffff', '#ffff00', '#ff0000', 
+      '#00ff00', '#ff8800', '#ff0088', '#8800ff',
+      '#00ff88', '#88ff00'
+    ];
+
+    function resize() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // Input
+    function updatePlayerPos(e) {
+      if (isGameOver) return;
+      
+      let clientX, clientY;
+      
+      if (e.type === 'touchmove') {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+      } else {
+        clientX = e.clientX;
+        clientY = e.clientY;
+      }
+      
+      // Center ship on cursor, instantly
+      player.x = clientX - player.width / 2;
+      player.y = clientY - player.height / 2;
+    }
+
+    window.addEventListener('mousemove', updatePlayerPos);
+    window.addEventListener('touchmove', updatePlayerPos, { passive: false });
+
+    // Init background stars
+    function initStars() {
+      stars = [];
+      for (let i = 0; i < 150; i++) {
+        stars.push({
+          x: Math.random() * canvas.width,
+          y: Math.random() * canvas.height,
+          size: Math.random() * 2 + 1, // 1 to 3 px
+          color: Math.random() > 0.5 ? '#aaaaaa' : '#ffffff'
+        });
+      }
+    }
+
+    // Draw Stars
+    function drawStars() {
+      for (let star of stars) {
+        ctx.fillStyle = star.color;
+        ctx.fillRect(star.x, star.y, star.size, star.size);
+      }
+    }
+
+    // AABB Collision Detection
+    function checkCollision(rect1, rect2) {
+      return (
+        rect1.x < rect2.x + rect2.width &&
+        rect1.x + rect1.width > rect2.x &&
+        rect1.y < rect2.y + rect2.height &&
+        rect1.y + rect1.height > rect2.y
+      );
+    }
+
+    function resetGame() {
+      isGameOver = false;
+      gameOverScreen.style.display = 'none';
+      asteroids = [];
+      asteroidBaseSpeed = 3;
+      asteroidSpawnRate = 800;
+      currentLevel = 0;
+      asteroidColor = neonColors[0];
+      
+      // Reset player position just in case
+      player.x = window.innerWidth / 2 - player.width / 2;
+      player.y = window.innerHeight / 2 - player.height / 2;
+
+      initStars();
+      
+      requestAnimationFrame((timestamp) => {
+        startTime = timestamp;
+        lastSpawnTime = timestamp;
+        loop(timestamp);
+      });
+    }
+
+    function spawnAsteroid(timestamp) {
+      if (timestamp - lastSpawnTime > asteroidSpawnRate) {
+        asteroids.push({
+          x: Math.random() * (canvas.width - ASTEROID_SIZE),
+          y: -ASTEROID_SIZE,
+          width: ASTEROID_SIZE,
+          height: ASTEROID_SIZE,
+          speed: asteroidBaseSpeed + Math.random() * 1.5 // Base speed + some randomness
+        });
+        lastSpawnTime = timestamp;
+      }
+    }
+
+    function update(timestamp) {
+      // Calculate survival time
+      survivalTime = (timestamp - startTime) / 1000;
+      
+      // Level progression every 10 seconds
+      const newLevel = Math.floor(survivalTime / 10);
+      if (newLevel > currentLevel) {
+        currentLevel = newLevel;
+        asteroidBaseSpeed += 1; // Increase falling speed
+        
+        // Change asteroid color to a new vibrant neon color
+        let newColor = asteroidColor;
+        while(newColor === asteroidColor) {
+          newColor = neonColors[Math.floor(Math.random() * neonColors.length)];
+        }
+        asteroidColor = newColor;
+        
+        // Optionally decrease spawn rate slightly to make it harder
+        if (asteroidSpawnRate > 200) {
+          asteroidSpawnRate -= 50;
+        }
+      }
+      
+      timerDisplay.innerText = `Time: ${survivalTime.toFixed(1)}s`;
+
+      spawnAsteroid(timestamp);
+
+      // Update asteroids and check collisions
+      for (let i = asteroids.length - 1; i >= 0; i--) {
+        let a = asteroids[i];
+        a.y += a.speed;
+        
+        // Remove asteroid if it goes off the bottom of the screen
+        if (a.y > canvas.height) {
+          asteroids.splice(i, 1);
+          continue;
+        }
+
+        // Check AABB collision with player
+        if (checkCollision(player, a)) {
+          isGameOver = true;
+        }
+      }
+    }
+
+    function draw() {
+      // Clear canvas with space black
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      // Draw background
+      drawStars();
+
+      // Draw player (spaceship) - 40x40 pixel art style
+      ctx.fillStyle = player.color;
+      ctx.fillRect(player.x, player.y, player.width, player.height);
+      
+      // Simple inner details to look slightly more like a ship
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(player.x + 10, player.y + 10, 20, 20);
+      ctx.fillStyle = '#ff00ff';
+      ctx.fillRect(player.x + 15, player.y + 15, 10, 10);
+
+      // Draw asteroids - 30x30
+      ctx.fillStyle = asteroidColor;
+      for (let a of asteroids) {
+        ctx.fillRect(a.x, a.y, a.width, a.height);
+        
+        // Asteroid details
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(a.x + 5, a.y + 5, 5, 5);
+        ctx.fillRect(a.x + 20, a.y + 15, 5, 5);
+        ctx.fillStyle = asteroidColor;
+      }
+    }
+
+    function loop(timestamp) {
+      if (isGameOver) {
+        gameOverScreen.style.display = 'block';
+        finalTimeDisplay.innerText = `You survived for ${survivalTime.toFixed(1)} seconds!`;
+        return; // Halt the game loop
+      }
+
+      update(timestamp);
+      draw();
+      
+      animationFrameId = requestAnimationFrame(loop);
+    }
+
+    restartBtn.addEventListener('click', resetGame);
+
+    // Initial Start
+    initStars();
+    requestAnimationFrame((timestamp) => {
+      startTime = timestamp;
+      lastSpawnTime = timestamp;
+      loop(timestamp);
+    });
+  </script>
+</body>
+</html>
