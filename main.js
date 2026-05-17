@@ -11,24 +11,59 @@ const overheatBar = document.getElementById('overheatBar');
 
 // Audio Context (started on first interaction)
 let audioCtx = null;
-let ambientOsc = null;
-let ambientGain = null;
 
 function initAudio() {
   if (audioCtx) return;
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-  // Ambient "space hum" (Liquid DnB vibe)
-  ambientOsc = audioCtx.createOscillator();
-  ambientOsc.type = 'sine';
-  ambientOsc.frequency.setValueAtTime(55, audioCtx.currentTime); // Low sub bass
+  // Procedural rhythm (kick and bass synth)
+  setInterval(() => {
+    if (isPaused || isGameOver) return; // Wait until isPaused exists, or just skip if game over
+    const time = audioCtx.currentTime;
 
-  ambientGain = audioCtx.createGain();
-  ambientGain.gain.setValueAtTime(0.1, audioCtx.currentTime); // Subtle volume
+    // Kick Drum
+    const kickOsc = audioCtx.createOscillator();
+    const kickGain = audioCtx.createGain();
+    kickOsc.type = 'sine';
+    kickOsc.frequency.setValueAtTime(150, time);
+    kickOsc.frequency.exponentialRampToValueAtTime(0.01, time + 0.1);
+    kickGain.gain.setValueAtTime(0.5, time);
+    kickGain.gain.exponentialRampToValueAtTime(0.01, time + 0.1);
+    kickOsc.connect(kickGain);
+    kickGain.connect(audioCtx.destination);
+    kickOsc.start(time);
+    kickOsc.stop(time + 0.1);
 
-  ambientOsc.connect(ambientGain);
-  ambientGain.connect(audioCtx.destination);
-  ambientOsc.start();
+    // Bass Synth (off-beat)
+    setTimeout(() => {
+      if (isPaused || isGameOver) return;
+      const bassOsc = audioCtx.createOscillator();
+      const bassGain = audioCtx.createGain();
+      bassOsc.type = 'sawtooth';
+      bassOsc.frequency.setValueAtTime(65, audioCtx.currentTime);
+      bassGain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+      bassGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+      bassOsc.connect(bassGain);
+      bassGain.connect(audioCtx.destination);
+      bassOsc.start(audioCtx.currentTime);
+      bassOsc.stop(audioCtx.currentTime + 0.2);
+    }, 250); // 120bpm -> 500ms per beat, offset by 250ms
+  }, 500);
+}
+
+function playLootSound() {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(1200, audioCtx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(2000, audioCtx.currentTime + 0.1);
+  gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.1);
 }
 
 function playPew() {
@@ -81,9 +116,11 @@ let player = {
   x: window.innerWidth / 2,
   y: window.innerHeight / 2,
   radius: 20, // INCREASED SIZE
-  color: '#0ff' // Cyan
+  color: '#0ff', // Cyan
+  hp: 100
 };
 
+let currentSkin = 'vector';
 let lives = 3;
 let isShooting = false;
 let lastShotTime = 0;
@@ -108,6 +145,13 @@ let asteroidBaseSpeed = 3; // Initial speed
 let asteroidSpawnRate = 800; // ms
 let lastSpawnTime = 0;
 let currentLevel = 0;
+
+// Multi-Weapon & Drops State
+let currentWeapon = 1;
+let weapon2Unlocked = false;
+let weaponDropSpawned = false;
+let extraLifeSpawned = false;
+let drops = [];
 
 function resize() {
   canvas.width = window.innerWidth;
@@ -137,7 +181,6 @@ window.addEventListener('touchmove', updatePlayerPos, { passive: false });
 
 // Input - Shooting
 function handlePointerDown() {
-  initAudio();
   if (!isGameOver) isShooting = true;
 }
 function handlePointerUp() {
@@ -147,6 +190,94 @@ window.addEventListener('mousedown', handlePointerDown);
 window.addEventListener('mouseup', handlePointerUp);
 window.addEventListener('touchstart', handlePointerDown);
 window.addEventListener('touchend', handlePointerUp);
+
+// Global controls object
+const controls = {
+  moveLeft: false,
+  moveRight: false,
+  moveUp: false,
+  moveDown: false,
+  fire: false
+};
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp') controls.moveUp = true;
+  if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') controls.moveLeft = true;
+  if (e.key === 's' || e.key === 'S' || e.key === 'ArrowDown') controls.moveDown = true;
+  if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') controls.moveRight = true;
+  if (e.key === ' ') {
+    controls.fire = true;
+  }
+  if (e.key === 'Escape' || e.key === 'p' || e.key === 'P') {
+    isPaused = !isPaused;
+    const pauseOverlay = document.getElementById('pauseOverlay');
+    if (isPaused) {
+      pauseOverlay.style.display = 'flex';
+    } else {
+      pauseOverlay.style.display = 'none';
+    }
+  }
+});
+
+window.addEventListener('keyup', (e) => {
+  if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp') controls.moveUp = false;
+  if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') controls.moveLeft = false;
+  if (e.key === 's' || e.key === 'S' || e.key === 'ArrowDown') controls.moveDown = false;
+  if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') controls.moveRight = false;
+  if (e.key === ' ') controls.fire = false;
+
+  if (e.key === '1') {
+    currentWeapon = 1;
+    drawWpnIndicator();
+  }
+  if (e.key === '2' && weapon2Unlocked) {
+    currentWeapon = 2;
+    drawWpnIndicator();
+  }
+  if (e.key === 't' || e.key === 'T' || e.key === 'e' || e.key === 'E') {
+    currentSkin = currentSkin === 'vector' ? 'falcon' : 'vector';
+  }
+});
+
+window.addEventListener('wheel', (e) => {
+  if (!weapon2Unlocked) return;
+  if (e.deltaY > 0 || e.deltaY < 0) {
+    currentWeapon = currentWeapon === 1 ? 2 : 1;
+    drawWpnIndicator();
+  }
+});
+
+const wpnCanvas = document.getElementById('wpnCanvas');
+const wpnCtx = wpnCanvas.getContext('2d');
+
+function drawWpnIndicator() {
+  wpnCtx.clearRect(0, 0, wpnCanvas.width, wpnCanvas.height);
+  wpnCtx.save();
+  wpnCtx.translate(wpnCanvas.width / 2, wpnCanvas.height / 2);
+
+  wpnCtx.strokeStyle = '#0ff';
+  wpnCtx.lineWidth = 3;
+  wpnCtx.lineCap = 'round';
+  wpnCtx.shadowBlur = 10;
+  wpnCtx.shadowColor = '#0ff';
+
+  wpnCtx.beginPath();
+  if (typeof currentWeapon !== 'undefined' && currentWeapon === 2) {
+    // 3-pronged trident
+    wpnCtx.moveTo(0, 10);
+    wpnCtx.lineTo(0, -10);
+    wpnCtx.moveTo(-8, -2);
+    wpnCtx.lineTo(0, 10);
+    wpnCtx.moveTo(8, -2);
+    wpnCtx.lineTo(0, 10);
+  } else {
+    // Single vertical bar
+    wpnCtx.moveTo(0, -10);
+    wpnCtx.lineTo(0, 10);
+  }
+  wpnCtx.stroke();
+  wpnCtx.restore();
+}
 
 function updateLivesDisplay() {
   livesDisplay.innerHTML = '';
@@ -200,11 +331,28 @@ function initStars() {
   }
 }
 
+function createPixelShatter(x, y, color) {
+  for(let i=0; i<15; i++) {
+    let angle = Math.random() * Math.PI * 2;
+    let speed = Math.random() * 4 + 2;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 1.0,
+      decay: 0.05,
+      color: color,
+      size: 3,
+      isSquare: true // we'll render these as squares instead of circles
+    });
+  }
+}
+
 // Draw & Update Stars (Parallax)
-function drawStars(timestamp) {
+function drawStars(timestamp, dt) {
   for (let star of stars) {
     // Move star
-    star.y += star.speed;
+    star.y += star.speed * dt;
     if (star.y > canvas.height) {
       star.y = 0;
       star.x = Math.random() * canvas.width;
@@ -309,6 +457,10 @@ function resetGame() {
   lasers = [];
   particles = [];
   coins = [];
+  drops = [];
+  weaponDropSpawned = false;
+  extraLifeSpawned = false;
+  weapon2Unlocked = false;
 
   asteroidBaseSpeed = 3;
   asteroidSpawnRate = 800;
@@ -318,6 +470,9 @@ function resetGame() {
   scoreDisplay.innerText = `Score: ${score}`;
   updateLivesDisplay();
 
+  if (typeof currentWeapon !== 'undefined') currentWeapon = 1;
+  drawWpnIndicator();
+
   isShooting = false;
   invulnerableUntil = 0;
   heat = 0;
@@ -326,6 +481,7 @@ function resetGame() {
 
   player.x = window.innerWidth / 2;
   player.y = window.innerHeight / 2;
+  player.hp = 100;
 
   initStars();
 
@@ -345,6 +501,15 @@ function drawShip(timestamp) {
 
   ctx.save();
   ctx.translate(player.x, player.y);
+
+  // HP Shield Bar
+  ctx.fillStyle = '#555';
+  ctx.fillRect(-20, -35, 40, 4);
+  ctx.fillStyle = '#0f0'; // Neon Green
+  ctx.shadowBlur = 5;
+  ctx.shadowColor = '#0f0';
+  ctx.fillRect(-20, -35, 40 * (Math.max(player.hp, 0) / 100), 4);
+  ctx.shadowBlur = 0;
 
   // Draw Dual Engine Exhaust Nozzles
   ctx.fillStyle = '#777';
@@ -391,26 +556,51 @@ function drawShip(timestamp) {
     ctx.shadowBlur = 0; // reset
   }
 
-  // Futuristic Vector Fighter Hull
-  ctx.fillStyle = '#ddd';
-  ctx.beginPath();
-  ctx.moveTo(0, -25);   // Nose
-  ctx.lineTo(20, 15);   // Right wing tip
-  ctx.lineTo(12, 10);   // Right inner body
-  ctx.lineTo(0, 15);    // Center back
-  ctx.lineTo(-12, 10);  // Left inner body
-  ctx.lineTo(-20, 15);  // Left wing tip
-  ctx.closePath();
-  ctx.fill();
+  if (currentSkin === 'vector') {
+    // Futuristic Vector Fighter Hull
+    ctx.fillStyle = '#ddd';
+    ctx.beginPath();
+    ctx.moveTo(0, -25);   // Nose
+    ctx.lineTo(20, 15);   // Right wing tip
+    ctx.lineTo(12, 10);   // Right inner body
+    ctx.lineTo(0, 15);    // Center back
+    ctx.lineTo(-12, 10);  // Left inner body
+    ctx.lineTo(-20, 15);  // Left wing tip
+    ctx.closePath();
+    ctx.fill();
 
-  // Cockpit Window
-  ctx.fillStyle = player.color;
-  ctx.beginPath();
-  ctx.moveTo(0, -10);
-  ctx.lineTo(6, 5);
-  ctx.lineTo(-6, 5);
-  ctx.closePath();
-  ctx.fill();
+    // Cockpit Window
+    ctx.fillStyle = player.color;
+    ctx.beginPath();
+    ctx.moveTo(0, -10);
+    ctx.lineTo(6, 5);
+    ctx.lineTo(-6, 5);
+    ctx.closePath();
+    ctx.fill();
+  } else if (currentSkin === 'falcon') {
+    // Abstract Millennium Falcon outline
+    ctx.fillStyle = '#ccc';
+    ctx.beginPath();
+    // main disc body
+    ctx.arc(0, 5, 18, 0, Math.PI*2);
+    ctx.fill();
+
+    // front mandibles
+    ctx.fillRect(-10, -20, 6, 20);
+    ctx.fillRect(4, -20, 6, 20);
+
+    // cockpit tube
+    ctx.fillStyle = '#aaa';
+    ctx.beginPath();
+    ctx.arc(15, 0, 5, 0, Math.PI*2);
+    ctx.fill();
+
+    // cockpit glass
+    ctx.fillStyle = '#0ff';
+    ctx.beginPath();
+    ctx.arc(15, -2, 2, 0, Math.PI*2);
+    ctx.fill();
+  }
 
   ctx.restore();
 }
@@ -459,8 +649,23 @@ function drawAsteroid(a, timestamp) {
   ctx.restore();
 }
 
-function update(timestamp) {
+function update(timestamp, dt) {
+  // Keyboard Movement Priority
+  const baseSpeed = 10;
+  const moveSpeed = baseSpeed * dt;
+  if (controls.moveUp) player.y -= moveSpeed;
+  if (controls.moveDown) player.y += moveSpeed;
+  if (controls.moveLeft) player.x -= moveSpeed;
+  if (controls.moveRight) player.x += moveSpeed;
+
+  // Clamp player to canvas
+  if (player.x < player.radius) player.x = player.radius;
+  if (player.x > canvas.width - player.radius) player.x = canvas.width - player.radius;
+  if (player.y < player.radius) player.y = player.radius;
+  if (player.y > canvas.height - player.radius) player.y = canvas.height - player.radius;
+
   survivalTime = (timestamp - startTime) / 1000;
+  // Timer is display-only now. Score doesn't passively increase with time.
 
   // Level progression every 10 seconds (Speed & Spawn Rate only)
   const newLevel = Math.floor(survivalTime / 10);
@@ -472,13 +677,19 @@ function update(timestamp) {
     }
   }
 
+  // Cap after 50s
+  if (survivalTime > 50) {
+    asteroidBaseSpeed = Math.min(asteroidBaseSpeed, 8);
+    asteroidSpawnRate = Math.max(asteroidSpawnRate, 400);
+  }
+
   timerDisplay.innerText = `Time: ${survivalTime.toFixed(1)}s`;
 
   spawnAsteroid(timestamp);
 
   // Heat cooling
   if (heat > 0) {
-    heat -= COOLING_RATE;
+    heat -= COOLING_RATE * dt;
     if (heat <= 0) {
       heat = 0;
       isOverheated = false;
@@ -487,20 +698,34 @@ function update(timestamp) {
   updateOverheatUI();
 
   // Shooting mechanics (Disabled while invulnerable)
-  if (isShooting && !isOverheated && timestamp > invulnerableUntil && timestamp - lastShotTime > FIRE_RATE) {
-    heat += HEAT_PER_SHOT;
+  if ((isShooting || controls.fire) && !isOverheated && timestamp > invulnerableUntil && timestamp - lastShotTime > FIRE_RATE) {
+
+    if (currentWeapon === 1) {
+      heat += HEAT_PER_SHOT;
+      lasers.push({
+        x: player.x,
+        y: player.y - 25,
+        vy: -15,
+        vx: 0,
+        length: 20,
+        radius: 2
+      });
+    } else if (currentWeapon === 2) {
+      heat += HEAT_PER_SHOT * 3; // 3x heat
+      const speed = 15;
+      // Straight
+      lasers.push({ x: player.x, y: player.y - 25, vy: -speed, vx: 0, length: 20, radius: 2 });
+      // -30 degrees
+      lasers.push({ x: player.x, y: player.y - 25, vy: -speed * Math.cos(Math.PI/6), vx: -speed * Math.sin(Math.PI/6), length: 20, radius: 2 });
+      // +30 degrees
+      lasers.push({ x: player.x, y: player.y - 25, vy: -speed * Math.cos(Math.PI/6), vx: speed * Math.sin(Math.PI/6), length: 20, radius: 2 });
+    }
+
     if (heat >= MAX_HEAT) {
       heat = MAX_HEAT;
       isOverheated = true;
     }
 
-    lasers.push({
-      x: player.x,
-      y: player.y - 25, // offset from new nose
-      vy: -15, // fast lasers
-      length: 20,
-      radius: 2 // for collision
-    });
     flashFrames = 5; // Muzzle flash duration
     playPew();
     lastShotTime = timestamp;
@@ -509,7 +734,8 @@ function update(timestamp) {
   // Update Lasers
   for(let i = lasers.length - 1; i >= 0; i--) {
     let l = lasers[i];
-    l.y += l.vy;
+    l.y += l.vy * dt;
+    if (l.vx) l.x += l.vx * dt; // Support angled lasers
     if (l.y < -30) {
       lasers.splice(i, 1);
     }
@@ -532,9 +758,9 @@ function update(timestamp) {
   // Update Particles
   for(let i = particles.length - 1; i >= 0; i--) {
     let p = particles[i];
-    p.x += p.vx;
-    p.y += p.vy;
-    p.life -= p.decay;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.life -= p.decay * dt;
     if (p.life <= 0) {
       particles.splice(i, 1);
     }
@@ -556,7 +782,40 @@ function update(timestamp) {
     if (Math.sqrt(dx*dx + dy*dy) < player.radius + c.radius) {
       score += 100;
       scoreDisplay.innerText = `Score: ${score}`;
+      playLootSound();
+      createPixelShatter(c.x, c.y, '#ffd700');
       coins.splice(i, 1);
+    }
+  }
+
+  // Update Drops
+  for(let i = drops.length - 1; i >= 0; i--) {
+    let d = drops[i];
+
+    // 10s lifecycle for drops too
+    if (timestamp - d.spawnTime > 10000) {
+      drops.splice(i, 1);
+      continue;
+    }
+
+    d.rotation += 0.05 * dt;
+
+    let dx = player.x - d.x;
+    let dy = player.y - d.y;
+    if (Math.sqrt(dx*dx + dy*dy) < player.radius + d.radius) {
+      if (d.type === 'weapon') {
+        weapon2Unlocked = true;
+        currentWeapon = 2;
+        drawWpnIndicator();
+        playLootSound();
+        createPixelShatter(d.x, d.y, '#ff0');
+      } else if (d.type === 'life') {
+        lives++;
+        updateLivesDisplay();
+        playLootSound();
+        createPixelShatter(d.x, d.y, '#f0f');
+      }
+      drops.splice(i, 1);
     }
   }
 
@@ -564,8 +823,8 @@ function update(timestamp) {
   let playerHit = false;
   for (let i = asteroids.length - 1; i >= 0; i--) {
     let a = asteroids[i];
-    a.y += a.vy;
-    a.rotation += a.rotSpeed;
+    a.y += a.vy * dt;
+    a.rotation += a.rotSpeed * dt;
 
     // Spawn trail
     if (Math.random() > 0.6) spawnTrail(a.x, a.y, a.color);
@@ -588,6 +847,12 @@ function update(timestamp) {
         a.hp--;
         if (a.hp <= 0) {
           playBoom();
+
+          if (a.radius === 50) score += 50;
+          else if (a.radius === 35) score += 30;
+          else score += 10;
+          scoreDisplay.innerText = `Score: ${score}`;
+
           // Screen shake scales heavily with big asteroids
           screenShakeFrames = a.radius === 50 ? 15 : 8;
           createBurst(a.x, a.y, a.color);
@@ -597,7 +862,31 @@ function update(timestamp) {
             coins.push({
               x: a.x, y: a.y,
               spawnTime: timestamp,
-              radius: 10
+              radius: 20
+            });
+          }
+
+          // Weapon Drop Logic (100% chance from first asteroid after 30s)
+          if (survivalTime > 30 && !weaponDropSpawned) {
+            weaponDropSpawned = true;
+            drops.push({
+              x: a.x, y: a.y,
+              type: 'weapon',
+              radius: 20,
+              rotation: 0,
+              spawnTime: timestamp
+            });
+          }
+
+          // Extra Life Logic (50% from large asteroid, max 1)
+          if (a.radius === 50 && !extraLifeSpawned && Math.random() < 0.5) {
+            extraLifeSpawned = true;
+            drops.push({
+              x: a.x, y: a.y,
+              type: 'life',
+              radius: 15,
+              rotation: 0,
+              spawnTime: timestamp
             });
           }
 
@@ -616,7 +905,16 @@ function update(timestamp) {
       let dx = player.x - a.x;
       let dy = player.y - a.y;
       if (dx*dx + dy*dy < (player.radius + a.radius) * (player.radius + a.radius)) {
-        playerHit = true;
+        // Subtract HP instead of instant death
+        player.hp -= (a.radius === 50 ? 50 : a.radius === 35 ? 30 : 15);
+        if (player.hp <= 0) {
+          playerHit = true;
+        } else {
+          a.hitFlashUntil = timestamp + 100;
+          invulnerableUntil = timestamp + 500; // brief invuln on small hit
+          playBoom();
+          createBurst(player.x, player.y, '#0ff'); // shield shatter effect
+        }
         break;
       }
     }
@@ -626,9 +924,10 @@ function update(timestamp) {
     lives--;
     updateLivesDisplay();
     playBoom();
-    screenShakeFrames = 25; // Major screen shake
+    screenShakeFrames = 20;
     createBurst(player.x, player.y, '#f00'); // explosion on ship
     asteroids = []; // clear asteroids
+    player.hp = 100;
 
     if (lives <= 0) {
       isGameOver = true;
@@ -639,7 +938,7 @@ function update(timestamp) {
   }
 }
 
-function draw(timestamp) {
+function draw(timestamp, dt) {
   ctx.save(); // Save pre-shake state
 
   // Screen Shake logic
@@ -648,13 +947,15 @@ function draw(timestamp) {
     let dx = (Math.random() - 0.5) * shakeIntensity * 2;
     let dy = (Math.random() - 0.5) * shakeIntensity * 2;
     ctx.translate(dx, dy);
-    screenShakeFrames--;
+    // Scale down screen shake decay slightly by dt for smoother shake across frame rates, but frame-based is okay too if we just decrement
+    screenShakeFrames -= 1 * dt;
+    if (screenShakeFrames < 0) screenShakeFrames = 0;
   }
 
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  drawStars(timestamp);
+  drawStars(timestamp, dt);
 
   // Draw Coins
   for(let c of coins) {
@@ -688,13 +989,69 @@ function draw(timestamp) {
     ctx.restore();
   }
 
+  // Draw Drops
+  for(let d of drops) {
+    let age = timestamp - d.spawnTime;
+    let blinkAlpha = 1.0;
+
+    if (age > 7000) {
+      blinkAlpha = Math.floor(timestamp / 100) % 2 === 0 ? 0.3 : 1.0;
+    }
+
+    ctx.save();
+    ctx.translate(d.x, d.y);
+    ctx.globalAlpha = blinkAlpha;
+
+    if (d.type === 'weapon') {
+      ctx.rotate(d.rotation);
+      ctx.fillStyle = '#d4af37'; // Gold
+      ctx.beginPath();
+      ctx.arc(0, 0, d.radius, 0, Math.PI*2);
+      ctx.fill();
+
+      // Trident logo inside
+      ctx.strokeStyle = '#0ff';
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = '#0ff';
+      ctx.beginPath();
+      ctx.moveTo(0, 8);
+      ctx.lineTo(0, -8);
+      ctx.moveTo(-6, -2);
+      ctx.lineTo(0, 8);
+      ctx.moveTo(6, -2);
+      ctx.lineTo(0, 8);
+      ctx.stroke();
+    } else if (d.type === 'life') {
+      // Glowy neon heart (mimicking CSS)
+      ctx.shadowBlur = 15;
+      ctx.shadowColor = '#f0f';
+      ctx.fillStyle = '#f0f';
+      ctx.scale(1.2, 1.2); // make it slightly bigger
+      ctx.rotate(-Math.PI / 4); // -45 deg
+
+      // Same shape logic as CSS pseudo-elements but with Canvas path
+      ctx.fillRect(0, 0, 14, 14);
+      ctx.beginPath();
+      ctx.arc(0, 7, 7, 0, Math.PI * 2);
+      ctx.arc(7, 0, 7, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
   // Draw Particles
   for(let p of particles) {
     ctx.globalAlpha = p.life;
     ctx.fillStyle = p.color;
     ctx.beginPath();
-    ctx.arc(p.x, p.y, p.size, 0, Math.PI*2);
-    ctx.fill();
+    if (p.isSquare) {
+      ctx.fillRect(p.x - p.size/2, p.y - p.size/2, p.size, p.size);
+    } else {
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI*2);
+      ctx.fill();
+    }
   }
   ctx.globalAlpha = 1.0;
 
@@ -758,8 +1115,21 @@ function loop(timestamp) {
     return;
   }
 
-  update(timestamp);
-  draw(timestamp);
+  if (isPaused) {
+    lastTimestamp = timestamp;
+    animationFrameId = requestAnimationFrame(loop);
+    return;
+  }
+
+  // Calculate dt (normalized around 16.6667ms)
+  let dt = (timestamp - lastTimestamp) / 16.6667;
+  lastTimestamp = timestamp;
+
+  // Cap dt to prevent massive jumps (e.g. background tab)
+  if (dt > 3.0) dt = 3.0;
+
+  update(timestamp, dt);
+  draw(timestamp, dt);
 
   animationFrameId = requestAnimationFrame(loop);
 }
@@ -770,8 +1140,26 @@ restartBtn.addEventListener('click', resetGame);
 updateLivesDisplay();
 updateOverheatUI();
 initStars();
-requestAnimationFrame((timestamp) => {
-  startTime = timestamp;
-  lastSpawnTime = timestamp;
-  loop(timestamp);
+
+const startOverlay = document.getElementById('startOverlay');
+let lastTimestamp = 0; // Needed for Delta Time calculation in Step 2, setting it up here
+let isPaused = false; // Needed for audio
+
+startOverlay.addEventListener('click', () => {
+  initAudio();
+  startOverlay.style.display = 'none';
+
+  // Force a modern canvas context resume if needed
+  if (audioCtx && audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+
+  drawWpnIndicator();
+
+  requestAnimationFrame((timestamp) => {
+    startTime = timestamp;
+    lastSpawnTime = timestamp;
+    lastTimestamp = timestamp;
+    loop(timestamp);
+  });
 });

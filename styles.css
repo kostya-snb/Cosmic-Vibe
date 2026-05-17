@@ -24,39 +24,50 @@ html, body {
   width: 100%;
   height: 100%;
   pointer-events: none;
-  display: flex;
-  justify-content: space-between;
   padding: 15px;
   box-sizing: border-box;
 }
 
-#topHUD {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+#timerDisplay {
+  position: absolute;
+  top: 15px;
+  left: 15px;
+  font-size: 24px;
+  font-weight: bold;
+  text-shadow: 2px 2px #ff00ff;
 }
 
 #scoreDisplay {
+  position: absolute;
+  bottom: 15px;
+  right: 15px;
   font-size: 32px;
   font-weight: bold;
   color: #ffd700;
-  text-shadow: 2px 2px #ff8800, 0 0 10px #ffbb00; /* Neon Gold aesthetic */
-}
-
-#timerDisplay {
-  font-size: 24px;
-  font-weight: bold;
-  text-shadow: 2px 2px #ff00ff; /* Neon aesthetic */
+  text-shadow: 2px 2px #ff8800, 0 0 10px #ffbb00;
 }
 
 #overheatContainer {
+  position: absolute;
+  bottom: 15px;
+  left: 15px;
   width: 150px;
   height: 15px;
   background-color: rgba(255, 255, 255, 0.2);
   border: 2px solid #555;
   border-radius: 4px;
-  position: relative;
   overflow: hidden;
+}
+
+#wpnIndicator {
+  position: absolute;
+  bottom: 40px;
+  left: 15px;
+  width: 40px;
+  height: 40px;
+  background-color: rgba(0, 0, 0, 0.5);
+  border: 2px solid #555;
+  border-radius: 4px;
 }
 
 #overheatBar {
@@ -76,37 +87,58 @@ html, body {
 }
 
 #livesDisplay {
+  position: absolute;
+  top: 15px;
+  right: 15px;
   display: flex;
   gap: 10px;
   align-items: flex-start;
 }
 
 .life-icon {
-  width: 25px;
-  height: 25px;
+  width: 20px;
+  height: 20px;
+  background-color: #f0f;
   position: relative;
+  transform: rotate(-45deg);
+  box-shadow: 0 0 10px #f0f;
 }
-
-/* Drawing a mini ship for the life icon via CSS triangles/shapes */
-.life-icon::before {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  border-left: 12.5px solid transparent;
-  border-right: 12.5px solid transparent;
-  border-bottom: 25px solid #ddd;
-}
+.life-icon::before,
 .life-icon::after {
   content: '';
+  width: 20px;
+  height: 20px;
+  background-color: #f0f;
+  border-radius: 50%;
   position: absolute;
-  bottom: 5px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 8px;
-  height: 8px;
-  background-color: #0ff; /* Cockpit color */
+}
+.life-icon::before {
+  top: -10px;
+  left: 0;
+}
+.life-icon::after {
+  top: 0;
+  left: 10px;
+}
+
+#pauseOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 50;
+  pointer-events: none;
+}
+#pauseOverlay h1 {
+  font-size: 48px;
+  color: #ff0;
+  text-shadow: 2px 2px #f00, 0 0 15px #ff0;
+  animation: pulseAnim 1s infinite alternate;
 }
 
 #gameOverScreen {
@@ -164,4 +196,25 @@ button:hover {
 button:active {
   transform: translate(2px, 2px);
   box-shadow: 2px 2px #00a;
+}
+
+#startOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.9);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 100;
+  cursor: pointer;
+}
+
+#startOverlay h1 {
+  font-size: 64px;
+  color: #0ff;
+  text-shadow: 0 0 20px #0ff, 4px 4px #00a;
+  animation: pulseAnim 1s infinite alternate;
 }
