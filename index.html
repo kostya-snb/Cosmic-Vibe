@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Cosmic Vibe v4.0</title>
+  <title>Cosmic Vibe v6.0</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -13,6 +13,7 @@
   <div id="uiLayer">
     <div id="scoreDisplay">Score: 0</div>
     <div id="timerDisplay">Time: 0.0s</div>
+    <div id="goldDisplay">Gold: 0</div>
 
     <div id="wpnIndicator">
       <canvas id="wpnCanvas" width="40" height="40"></canvas>
@@ -23,10 +24,48 @@
     </div>
 
     <div id="livesDisplay"></div>
+
+    <div id="bossHpBarContainer" style="display:none;">
+      <div id="bossHpBar"></div>
+    </div>
+
+    <div id="inventoryDisplay">
+      <div class="inventory-slot" id="slot1"><span class="slot-key">Z</span><div class="slot-item"></div></div>
+      <div class="inventory-slot" id="slot2"><span class="slot-key">X</span><div class="slot-item"></div></div>
+      <div class="inventory-slot" id="slot3"><span class="slot-key">C</span><div class="slot-item"></div></div>
+    </div>
   </div>
 
   <div id="pauseOverlay" style="display:none;">
     <h1>PAUSED</h1>
+  </div>
+
+  <div id="shopOverlay" style="display:none;">
+    <h1>NEON SHOP</h1>
+    <div id="shopGoldDisplay">Gold: 0</div>
+    <div class="shop-items">
+      <div class="shop-item" id="buyExtraLife">
+        <h3>Extra Life</h3>
+        <p>Adds +1 Life to HUD.</p>
+        <button class="buy-btn" data-cost="500">Buy - 500G</button>
+      </div>
+      <div class="shop-item" id="buyShieldRecharge">
+        <h3>Shield Recharge</h3>
+        <p>Instantly restores HP Shield to 100%.</p>
+        <button class="buy-btn" data-cost="200">Buy - 200G</button>
+      </div>
+      <div class="shop-item" id="buyDoubleDamage">
+        <h3>Double Damage</h3>
+        <p>Active Item (Inventory). Grants x2 damage for 15s.</p>
+        <button class="buy-btn" data-cost="400">Buy - 400G</button>
+      </div>
+      <div class="shop-item" id="buyInvulnerability">
+        <h3>Invulnerability</h3>
+        <p>Active Item (Inventory). Immune to damage for 5s.</p>
+        <button class="buy-btn" data-cost="300">Buy - 300G</button>
+      </div>
+    </div>
+    <button id="closeShopBtn">CONTINUE NEXT LEVEL</button>
   </div>
 
   <div id="gameOverScreen">
