@@ -1,3 +1,6 @@
+let victoryStartTime = 0;
+const victoryOverlay = document.getElementById('victoryOverlay');
+let isVictory = false;
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const scoreDisplay = document.getElementById('scoreDisplay');
@@ -165,7 +168,7 @@ let activeBuffs = {
 let player = {
   x: window.innerWidth / 2,
   y: window.innerHeight / 2,
-  radius: 20,
+  radius: 30,
   color: '#0ff', // Cyan
   hp: 100,
   hpBarVisibleUntil: 0
@@ -565,6 +568,11 @@ function resetGame() {
   weaponDropSpawned = false;
   extraLifeSpawned = false;
   boss = null;
+  isVictory = false;
+  if (victoryOverlay) {
+    victoryOverlay.style.display = 'none';
+    victoryOverlay.style.opacity = '0';
+  }
 
   asteroidBaseSpeed = 3;
   asteroidSpawnRate = 800;
@@ -609,6 +617,11 @@ function continueToNextLevel() {
   // Transition back to survival
   currentPhase = PHASES.SURVIVAL;
   boss = null;
+  isVictory = false;
+  if (victoryOverlay) {
+    victoryOverlay.style.display = 'none';
+    victoryOverlay.style.opacity = '0';
+  }
 
   // Reset for next level
   asteroids = [];
@@ -653,57 +666,57 @@ function drawShip(timestamp) {
     ctx.globalAlpha = 1.0;
   }
 
-  // Draw Dual Engine Exhaust Nozzles
+  // Draw Engine Exhausts
   ctx.fillStyle = '#777';
-  ctx.fillRect(-14, 10, 8, 10);
-  ctx.fillRect(6, 10, 8, 10);
+  ctx.fillRect(-14, 15, 28, 5);
 
   if (Math.random() > 0.2) {
     ctx.shadowBlur = 10;
-    ctx.shadowColor = '#f80';
-    ctx.fillStyle = '#f80';
-
+    ctx.shadowColor = '#0ff';
+    ctx.fillStyle = '#0ff';
     ctx.beginPath();
-    ctx.moveTo(-14, 20); ctx.lineTo(-6, 20); ctx.lineTo(-10, 30 + Math.random() * 10);
+    ctx.moveTo(-14, 20); ctx.lineTo(14, 20); ctx.lineTo(0, 25 + Math.random() * 5);
     ctx.fill();
-
-    ctx.beginPath();
-    ctx.moveTo(6, 20); ctx.lineTo(14, 20); ctx.lineTo(10, 30 + Math.random() * 10);
-    ctx.fill();
-
-    ctx.shadowBlur = 15;
-    ctx.shadowColor = '#ff0';
-    ctx.fillStyle = '#ff0';
-
-    ctx.beginPath();
-    ctx.moveTo(-12, 20); ctx.lineTo(-8, 20); ctx.lineTo(-10, 25 + Math.random() * 5);
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.moveTo(8, 20); ctx.lineTo(12, 20); ctx.lineTo(10, 25 + Math.random() * 5);
-    ctx.fill();
-
     ctx.shadowBlur = 0;
   }
 
-  // Futuristic Vector Fighter Hull
+  // Millennium Falcon Vector Silhouette
   ctx.fillStyle = '#ddd';
   ctx.beginPath();
-  ctx.moveTo(0, -25);
-  ctx.lineTo(20, 15);
-  ctx.lineTo(12, 10);
-  ctx.lineTo(0, 15);
-  ctx.lineTo(-12, 10);
-  ctx.lineTo(-20, 15);
+  // Circular main body
+  ctx.arc(0, 0, 18, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Forward mandibles
+  ctx.beginPath();
+  ctx.moveTo(-10, -10);
+  ctx.lineTo(-10, -25);
+  ctx.lineTo(-4, -25);
+  ctx.lineTo(-4, -18);
   ctx.closePath();
   ctx.fill();
 
+  ctx.beginPath();
+  ctx.moveTo(10, -10);
+  ctx.lineTo(10, -25);
+  ctx.lineTo(4, -25);
+  ctx.lineTo(4, -18);
+  ctx.closePath();
+  ctx.fill();
+
+  // Offset right cockpit
+  ctx.beginPath();
+  ctx.moveTo(15, -5);
+  ctx.lineTo(25, -10);
+  ctx.lineTo(25, 5);
+  ctx.lineTo(15, 10);
+  ctx.closePath();
+  ctx.fill();
+
+  // Cockpit window detail
   ctx.fillStyle = player.color;
   ctx.beginPath();
-  ctx.moveTo(0, -10);
-  ctx.lineTo(6, 5);
-  ctx.lineTo(-6, 5);
-  ctx.closePath();
+  ctx.arc(22, -2, 3, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.restore();
@@ -805,7 +818,8 @@ function update(timestamp, dt) {
       spawnAsteroid(timestamp);
     }
   } else if (currentPhase === PHASES.CLEARDOWN) {
-    if (asteroids.length === 0) {
+    // Proceed straight to boss transition without clearing asteroids
+    {
       currentPhase = PHASES.BOSS_TRANSITION;
       bossTransitionStartTime = timestamp;
 
@@ -813,14 +827,15 @@ function update(timestamp, dt) {
         x: canvas.width / 2,
         y: -200,
         targetY: 150,
-        hp: 1500,
-        maxHp: 1500,
-        width: 150,
-        height: 150,
+        hp: 3000,
+        maxHp: 3000,
+        width: 225,
+        height: 225,
         isDead: false,
         hitFlashUntil: 0,
         lastLaserTime: 0,
         isFiringLaser: false,
+        isTelegraphing: false,
         laserDurationUntil: 0
       };
 
@@ -846,9 +861,31 @@ function update(timestamp, dt) {
     }
   } else if (currentPhase === PHASES.BOSS_BATTLE) {
     if (boss && !boss.isDead) {
+      spawnAsteroid(timestamp);
+      // Horizontal Tracking
+      let dx = player.x - boss.x;
+      let speedX = 100 * dt;
+      if (Math.abs(dx) > speedX) {
+        boss.x += Math.sign(dx) * speedX;
+      } else {
+        boss.x = player.x;
+      }
+
+      // Contact damage
+      let dX = player.x - boss.x;
+      let dY = player.y - boss.y;
+      if (timestamp > invulnerableUntil && Math.abs(dX) < boss.width / 2 && Math.abs(dY) < boss.height / 2) {
+          player.hp -= 50; // 50% of maximum HP Shield
+          player.hpBarVisibleUntil = timestamp + 1000;
+          invulnerableUntil = timestamp + 1000;
+          createBurst(player.x, player.y, '#f00');
+          screenShakeFrames = 20;
+      }
+
       // Boss Death
       if (boss.hp <= 0) {
         boss.isDead = true;
+        boss.deathTime = timestamp;
 
         for (let i = 0; i < 5; i++) {
           setTimeout(() => {
@@ -861,18 +898,23 @@ function update(timestamp, dt) {
         bossHpBarContainer.style.display = 'none';
 
         setTimeout(() => {
-          currentPhase = PHASES.SHOP;
-          shopOverlay.style.display = 'flex';
-          document.getElementById('shopGoldDisplay').innerText = `Gold: ${gold}`;
-          checkShopButtons();
-          startShopMusic();
+          isVictory = true;
+          victoryStartTime = timestamp;
+          victoryOverlay.style.display = 'flex';
+          setTimeout(() => { victoryOverlay.style.opacity = '1'; }, 100);
         }, 1500);
       } else {
         // Boss Laser Attack
-        if (!boss.isFiringLaser && timestamp - boss.lastLaserTime > 7000) {
-          boss.isFiringLaser = true;
-          boss.laserDurationUntil = timestamp + 2000;
-          screenShakeFrames = 10;
+        if (!boss.isFiringLaser && !boss.isTelegraphing && timestamp - boss.lastLaserTime > 7000) {
+          boss.isTelegraphing = true;
+          boss.telegraphUntil = timestamp + 250;
+        }
+
+        if (boss.isTelegraphing && timestamp > boss.telegraphUntil) {
+           boss.isTelegraphing = false;
+           boss.isFiringLaser = true;
+           boss.laserDurationUntil = timestamp + 2000;
+           screenShakeFrames = 10;
         }
 
         if (boss.isFiringLaser) {
@@ -880,7 +922,7 @@ function update(timestamp, dt) {
             boss.isFiringLaser = false;
             boss.lastLaserTime = timestamp;
           } else {
-            let laserWidth = 60;
+            let laserWidth = 90;
             if (player.x > boss.x - laserWidth/2 && player.x < boss.x + laserWidth/2 && player.y > boss.y) {
                if (timestamp > invulnerableUntil) {
                  player.hp -= 20; // Heavy DPS
@@ -897,6 +939,8 @@ function update(timestamp, dt) {
   }
 
   timerDisplay.innerText = `Time: ${survivalTime.toFixed(1)}s`;
+  document.getElementById('currentLevelDisplay').innerText = `Current Level: ${currentLevel + 1}`;
+  document.getElementById('nextLevelDisplay').innerText = `Next Level: ${currentLevel + 2}`;
 
   if (heat > 0) {
     heat -= COOLING_RATE * dt;
@@ -1256,8 +1300,14 @@ function update(timestamp, dt) {
             coins.push({ x: a.x, y: a.y, spawnTime: timestamp, radius: 20 });
           }
 
-          if (survivalTime >= 30 && unlockedWeapons.length < 4) {
+          if (currentLevel > 0 && survivalTime >= 30 && unlockedWeapons.length < 4) {
             let dropChance = (!weaponDropSpawned) ? 1.0 : 0.2;
+            if (!weaponDropSpawned && currentLevel === 1) {
+              let wpnToDrop = 2;
+              drops.push({ x: a.x, y: a.y, type: 'weapon', weaponType: wpnToDrop, radius: 20, rotation: 0, spawnTime: timestamp });
+              weaponDropSpawned = true;
+              continue;
+            }
             if (Math.random() < dropChance) {
               weaponDropSpawned = true;
               let lockedWeapons = [2, 3, 4].filter(w => !unlockedWeapons.includes(w));
@@ -1511,47 +1561,71 @@ function draw(timestamp, dt) {
     ctx.save();
     ctx.translate(boss.x, boss.y);
     let isHit = timestamp < boss.hitFlashUntil;
-    let coreColor = isHit ? '#fff' : '#f0f';
+    let coreColor = isHit ? '#fff' : (boss.isTelegraphing ? '#ff0' : '#f0f');
     let outerColor = isHit ? '#fff' : '#a0a';
 
+    // Massive Neon Circle Core
     ctx.fillStyle = 'rgba(20, 0, 20, 0.8)';
     ctx.strokeStyle = outerColor;
     ctx.lineWidth = 5;
     if (!isHit) { ctx.shadowBlur = 20; ctx.shadowColor = outerColor; }
 
     ctx.beginPath();
-    ctx.moveTo(0, -boss.height / 2);
-    ctx.lineTo(boss.width / 2, 0);
-    ctx.lineTo(0, boss.height / 2);
-    ctx.lineTo(-boss.width / 2, 0);
-    ctx.closePath();
+    ctx.arc(0, 0, boss.width / 2.5, 0, Math.PI * 2);
     ctx.fill(); ctx.stroke();
+
+    // Intricate sinister plating/lines
+    ctx.strokeStyle = '#505';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 8; i++) {
+        let angle = (i / 8) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(angle) * (boss.width / 3), Math.sin(angle) * (boss.height / 3));
+        ctx.lineTo(Math.cos(angle) * (boss.width / 2), Math.sin(angle) * (boss.height / 2));
+        ctx.stroke();
+    }
 
     ctx.fillStyle = isHit ? '#fff' : '#000';
     ctx.strokeStyle = coreColor;
-    ctx.lineWidth = 3;
-    if (!isHit) { ctx.shadowBlur = 30; ctx.shadowColor = coreColor; }
+    ctx.lineWidth = 4;
+    if (!isHit) { ctx.shadowBlur = 40; ctx.shadowColor = coreColor; }
 
-    ctx.rotate(timestamp * 0.001);
     ctx.beginPath();
-    ctx.moveTo(0, -30); ctx.lineTo(30, 0); ctx.lineTo(0, 30); ctx.lineTo(-30, 0);
-    ctx.closePath();
+    ctx.arc(0, 0, 30, 0, Math.PI * 2);
     ctx.fill(); ctx.stroke();
     ctx.restore();
 
     if (boss.isFiringLaser) {
       ctx.save();
       ctx.globalAlpha = Math.random() * 0.2 + 0.8;
-      ctx.fillStyle = '#f0f';
+      ctx.fillStyle = coreColor;
       ctx.shadowBlur = 30;
-      ctx.shadowColor = '#f0f';
-      let laserWidth = 60;
+      ctx.shadowColor = coreColor;
+      let laserWidth = 90;
       ctx.fillRect(boss.x - laserWidth/2, boss.y, laserWidth, canvas.height - boss.y);
       ctx.fillStyle = '#fff';
       ctx.shadowBlur = 10;
       ctx.fillRect(boss.x - laserWidth/4, boss.y, laserWidth/2, canvas.height - boss.y);
       ctx.restore();
     }
+  }
+
+  if (isVictory) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Smooth fade in logic
+    let fadeAlpha = Math.max(0, Math.min(1.0, (timestamp - victoryStartTime) / 1000));
+    ctx.globalAlpha = fadeAlpha;
+
+    ctx.fillStyle = '#0ff';
+    ctx.font = '48px "Courier New"';
+    ctx.textAlign = 'center';
+    ctx.shadowBlur = 20;
+    ctx.shadowColor = '#0ff';
+    ctx.fillText("You Win. Congratulations!", canvas.width / 2, canvas.height / 3);
+    ctx.restore();
   }
 
   if (!isGameOver) {
@@ -1680,4 +1754,26 @@ startOverlay.addEventListener('click', () => {
     lastTimestamp = timestamp;
     loop(timestamp);
   });
+});
+
+
+const victoryContinueBtn = document.getElementById('victoryContinueBtn');
+const victoryShopBtn = document.getElementById('victoryShopBtn');
+const shopBackBtn = document.getElementById('shopBackBtn');
+
+victoryContinueBtn.addEventListener('click', continueToNextLevel);
+victoryShopBtn.addEventListener('click', () => {
+    victoryOverlay.style.display = 'none';
+    shopOverlay.style.display = 'flex';
+    document.getElementById('shopGoldDisplay').innerText = `Gold: ${gold}`;
+    checkShopButtons();
+    startShopMusic();
+});
+shopBackBtn.addEventListener('click', () => {
+    shopOverlay.style.display = 'none';
+    victoryOverlay.style.display = 'flex';
+    if (audioCtx) {
+       currentPitchOffset = 0;
+       startBattleMusic();
+    }
 });
