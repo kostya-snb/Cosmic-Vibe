@@ -117,7 +117,8 @@ let player = {
   y: window.innerHeight / 2,
   radius: 20, // INCREASED SIZE
   color: '#0ff', // Cyan
-  hp: 100
+  hp: 100,
+  hpBarVisibleUntil: 0
 };
 
 let currentSkin = 'vector';
@@ -234,9 +235,7 @@ window.addEventListener('keyup', (e) => {
     currentWeapon = 2;
     drawWpnIndicator();
   }
-  if (e.key === 't' || e.key === 'T' || e.key === 'e' || e.key === 'E') {
-    currentSkin = currentSkin === 'vector' ? 'falcon' : 'vector';
-  }
+  // Removed live skin toggling via 'T' and 'E'. Skin selection logic will be moved to settings menu in future.
 });
 
 window.addEventListener('wheel', (e) => {
@@ -263,13 +262,15 @@ function drawWpnIndicator() {
 
   wpnCtx.beginPath();
   if (typeof currentWeapon !== 'undefined' && currentWeapon === 2) {
-    // 3-pronged trident
-    wpnCtx.moveTo(0, 10);
-    wpnCtx.lineTo(0, -10);
-    wpnCtx.moveTo(-8, -2);
-    wpnCtx.lineTo(0, 10);
-    wpnCtx.moveTo(8, -2);
-    wpnCtx.lineTo(0, 10);
+    // Clean symmetric neon trident icon pointing UP
+    wpnCtx.moveTo(0, 12);
+    wpnCtx.lineTo(0, -12); // center bar
+    wpnCtx.moveTo(-8, 4);
+    wpnCtx.lineTo(-8, -6); // left bar
+    wpnCtx.moveTo(8, 4);
+    wpnCtx.lineTo(8, -6);  // right bar
+    wpnCtx.moveTo(-10, 4);
+    wpnCtx.lineTo(10, 4);  // crossbar
   } else {
     // Single vertical bar
     wpnCtx.moveTo(0, -10);
@@ -502,14 +503,20 @@ function drawShip(timestamp) {
   ctx.save();
   ctx.translate(player.x, player.y);
 
-  // HP Shield Bar
-  ctx.fillStyle = '#555';
-  ctx.fillRect(-20, -35, 40, 4);
-  ctx.fillStyle = '#0f0'; // Neon Green
-  ctx.shadowBlur = 5;
-  ctx.shadowColor = '#0f0';
-  ctx.fillRect(-20, -35, 40 * (Math.max(player.hp, 0) / 100), 4);
-  ctx.shadowBlur = 0;
+  // Dynamic HP Shield Bar (Hidden by default, shown when hit)
+  if (timestamp < player.hpBarVisibleUntil) {
+    let timeLeft = player.hpBarVisibleUntil - timestamp;
+    let alpha = timeLeft < 300 ? timeLeft / 300 : 1.0; // fade out last 300ms
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = '#555';
+    ctx.fillRect(-20, 35, 40, 4); // moved below ship (+35 instead of -35)
+    ctx.fillStyle = '#0f0'; // Neon Green
+    ctx.shadowBlur = 5;
+    ctx.shadowColor = '#0f0';
+    ctx.fillRect(-20, 35, 40 * (Math.max(player.hp, 0) / 100), 4);
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1.0;
+  }
 
   // Draw Dual Engine Exhaust Nozzles
   ctx.fillStyle = '#777';
@@ -557,7 +564,7 @@ function drawShip(timestamp) {
   }
 
   if (currentSkin === 'vector') {
-    // Futuristic Vector Fighter Hull
+    // Futuristic Vector Fighter Hull (Now Default)
     ctx.fillStyle = '#ddd';
     ctx.beginPath();
     ctx.moveTo(0, -25);   // Nose
@@ -578,7 +585,7 @@ function drawShip(timestamp) {
     ctx.closePath();
     ctx.fill();
   } else if (currentSkin === 'falcon') {
-    // Abstract Millennium Falcon outline
+    // Abstract Millennium Falcon outline (Archived for future menu usage)
     ctx.fillStyle = '#ccc';
     ctx.beginPath();
     // main disc body
@@ -599,6 +606,15 @@ function drawShip(timestamp) {
     ctx.fillStyle = '#0ff';
     ctx.beginPath();
     ctx.arc(15, -2, 2, 0, Math.PI*2);
+    ctx.fill();
+  } else if (currentSkin === 'basic') {
+    // Archived basic triangle silhouette
+    ctx.fillStyle = '#ddd';
+    ctx.beginPath();
+    ctx.moveTo(0, -20);
+    ctx.lineTo(15, 15);
+    ctx.lineTo(-15, 15);
+    ctx.closePath();
     ctx.fill();
   }
 
@@ -711,7 +727,7 @@ function update(timestamp, dt) {
         radius: 2
       });
     } else if (currentWeapon === 2) {
-      heat += HEAT_PER_SHOT * 3; // 3x heat
+      heat += 8; // Rebalanced from 15 (HEAT_PER_SHOT * 3)
       const speed = 15;
       // Straight
       lasers.push({ x: player.x, y: player.y - 25, vy: -speed, vx: 0, length: 20, radius: 2 });
@@ -867,7 +883,7 @@ function update(timestamp, dt) {
           }
 
           // Weapon Drop Logic (100% chance from first asteroid after 30s)
-          if (survivalTime > 30 && !weaponDropSpawned) {
+          if (survivalTime >= 30 && !weaponDropSpawned) {
             weaponDropSpawned = true;
             drops.push({
               x: a.x, y: a.y,
@@ -910,6 +926,7 @@ function update(timestamp, dt) {
         if (player.hp <= 0) {
           playerHit = true;
         } else {
+          player.hpBarVisibleUntil = timestamp + 1000; // show HP bar for 1s
           a.hitFlashUntil = timestamp + 100;
           invulnerableUntil = timestamp + 500; // brief invuln on small hit
           playBoom();
@@ -1024,18 +1041,23 @@ function draw(timestamp, dt) {
       ctx.lineTo(0, 8);
       ctx.stroke();
     } else if (d.type === 'life') {
-      // Glowy neon heart (mimicking CSS)
+      // Glowy neon heart (centered and strictly vertical)
       ctx.shadowBlur = 15;
       ctx.shadowColor = '#f0f';
       ctx.fillStyle = '#f0f';
-      ctx.scale(1.2, 1.2); // make it slightly bigger
-      ctx.rotate(-Math.PI / 4); // -45 deg
 
-      // Same shape logic as CSS pseudo-elements but with Canvas path
-      ctx.fillRect(0, 0, 14, 14);
+      // Scale and position adjustment to fit within radius
+      ctx.translate(0, -12); // move up to center
+
+      // Draw centered heart via bezier curves
       ctx.beginPath();
-      ctx.arc(0, 7, 7, 0, Math.PI * 2);
-      ctx.arc(7, 0, 7, 0, Math.PI * 2);
+      ctx.moveTo(0, 5);
+      ctx.bezierCurveTo(0, 5, 0, -5, -8, -5);
+      ctx.bezierCurveTo(-18, -5, -18, 10, -18, 10);
+      ctx.bezierCurveTo(-18, 20, -5, 25, 0, 32);
+      ctx.bezierCurveTo(5, 25, 18, 20, 18, 10);
+      ctx.bezierCurveTo(18, 10, 18, -5, 8, -5);
+      ctx.bezierCurveTo(0, -5, 0, 5, 0, 5);
       ctx.fill();
     }
     ctx.restore();
@@ -1063,9 +1085,15 @@ function draw(timestamp, dt) {
     ctx.shadowBlur = 20; // Intense glow
     ctx.shadowColor = '#f00';
 
+    // Calculate end point based on velocity vector so angled lasers draw correctly
+    let angle = 0;
+    if (l.vx) {
+      angle = Math.atan2(l.vy, l.vx) + Math.PI/2; // Add PI/2 because default is vertical
+    }
+
     ctx.beginPath();
     ctx.moveTo(l.x, l.y);
-    ctx.lineTo(l.x, l.y + l.length);
+    ctx.lineTo(l.x + Math.sin(angle) * l.length, l.y - Math.cos(angle) * l.length);
     ctx.stroke();
 
     // Laser glow outer
