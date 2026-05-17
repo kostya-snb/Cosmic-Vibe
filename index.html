@@ -13,6 +13,10 @@
   <div id="uiLayer">
     <div id="scoreDisplay">Score: 0</div>
     <div id="timerDisplay">Time: 0.0s</div>
+    <div id="levelDisplayContainer">
+      <div id="currentLevelDisplay">Current Level: 1</div>
+      <div id="nextLevelDisplay">Next Level: 2</div>
+    </div>
     <div id="goldDisplay">Gold: 0</div>
 
     <div id="wpnIndicator">
@@ -40,6 +44,11 @@
     <h1>PAUSED</h1>
   </div>
 
+  <div id="victoryOverlay" style="display:none;">
+    <button id="victoryContinueBtn">CONTINUE TO NEXT LEVEL</button>
+    <button id="victoryShopBtn">ENTER SHOP</button>
+  </div>
+
   <div id="shopOverlay" style="display:none;">
     <h1>NEON SHOP</h1>
     <div id="shopGoldDisplay">Gold: 0</div>
@@ -65,7 +74,8 @@
         <button class="buy-btn" data-cost="300">Buy - 300G</button>
       </div>
     </div>
-    <button id="closeShopBtn">CONTINUE NEXT LEVEL</button>
+    <button id="shopBackBtn">BACK</button>
+    <button id="closeShopBtn" style="display:none;">CONTINUE NEXT LEVEL</button>
   </div>
 
   <div id="gameOverScreen">
