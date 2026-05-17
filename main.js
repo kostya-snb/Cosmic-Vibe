@@ -1,3 +1,4 @@
+import { AudioEngine } from "./src/core/audio.js";
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const scoreDisplay = document.getElementById('scoreDisplay');
@@ -12,125 +13,6 @@ const overheatBar = document.getElementById('overheatBar');
 const shopOverlay = document.getElementById('shopOverlay');
 const bossHpBarContainer = document.getElementById('bossHpBarContainer');
 const bossHpBar = document.getElementById('bossHpBar');
-
-// Audio Context (started on first interaction)
-let audioCtx = null;
-let currentBpm = 120;
-let currentPitchOffset = 0;
-let bgmIntervalId = null;
-
-function initAudio() {
-  if (audioCtx) return;
-  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  startBattleMusic();
-}
-
-function startBattleMusic() {
-  if (bgmIntervalId) clearInterval(bgmIntervalId);
-  currentBpm = 120;
-  currentPitchOffset = 0;
-
-  bgmIntervalId = setInterval(() => {
-    if (isPaused || isGameOver || currentPhase === PHASES.SHOP) return;
-    const time = audioCtx.currentTime;
-
-    // Kick Drum
-    const kickOsc = audioCtx.createOscillator();
-    const kickGain = audioCtx.createGain();
-    kickOsc.type = 'sine';
-    kickOsc.frequency.setValueAtTime(150 * Math.pow(2, currentPitchOffset), time);
-    kickOsc.frequency.exponentialRampToValueAtTime(0.01, time + 0.1);
-    kickGain.gain.setValueAtTime(0.5, time);
-    kickGain.gain.exponentialRampToValueAtTime(0.01, time + 0.1);
-    kickOsc.connect(kickGain);
-    kickGain.connect(audioCtx.destination);
-    kickOsc.start(time);
-    kickOsc.stop(time + 0.1);
-
-    // Bass Synth (off-beat)
-    setTimeout(() => {
-      if (isPaused || isGameOver || currentPhase === PHASES.SHOP) return;
-      const bassOsc = audioCtx.createOscillator();
-      const bassGain = audioCtx.createGain();
-      bassOsc.type = 'sawtooth';
-      bassOsc.frequency.setValueAtTime(65 * Math.pow(2, currentPitchOffset), audioCtx.currentTime);
-      bassGain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-      bassGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
-      bassOsc.connect(bassGain);
-      bassGain.connect(audioCtx.destination);
-      bassOsc.start(audioCtx.currentTime);
-      bassOsc.stop(audioCtx.currentTime + 0.2);
-    }, (60000 / currentBpm) / 2); // off-beat based on current BPM
-  }, 60000 / currentBpm);
-}
-
-function startShopMusic() {
-  if (bgmIntervalId) clearInterval(bgmIntervalId);
-  // Minimal atmospheric ambient
-  bgmIntervalId = setInterval(() => {
-    if (currentPhase !== PHASES.SHOP) return;
-    const time = audioCtx.currentTime;
-
-    const padOsc = audioCtx.createOscillator();
-    const padGain = audioCtx.createGain();
-    padOsc.type = 'sine';
-    padOsc.frequency.setValueAtTime(220 + Math.random() * 50, time);
-
-    padGain.gain.setValueAtTime(0, time);
-    padGain.gain.linearRampToValueAtTime(0.05, time + 1);
-    padGain.gain.linearRampToValueAtTime(0, time + 4);
-
-    padOsc.connect(padGain);
-    padGain.connect(audioCtx.destination);
-    padOsc.start(time);
-    padOsc.stop(time + 4);
-  }, 3000);
-}
-
-function playLootSound() {
-  if (!audioCtx) return;
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(1200, audioCtx.currentTime);
-  osc.frequency.exponentialRampToValueAtTime(2000, audioCtx.currentTime + 0.1);
-  gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
-  osc.connect(gain);
-  gain.connect(audioCtx.destination);
-  osc.start();
-  osc.stop(audioCtx.currentTime + 0.1);
-}
-
-function playPew() {
-  if (!audioCtx) return;
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  osc.type = 'square';
-  osc.frequency.setValueAtTime(800, audioCtx.currentTime);
-  osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.1);
-  gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
-  osc.connect(gain);
-  gain.connect(audioCtx.destination);
-  osc.start();
-  osc.stop(audioCtx.currentTime + 0.1);
-}
-
-function playBoom() {
-  if (!audioCtx) return;
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  osc.type = 'sawtooth';
-  osc.frequency.setValueAtTime(100, audioCtx.currentTime);
-  osc.frequency.exponentialRampToValueAtTime(20, audioCtx.currentTime + 0.3);
-  gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
-  osc.connect(gain);
-  gain.connect(audioCtx.destination);
-  osc.start();
-  osc.stop(audioCtx.currentTime + 0.3);
-}
 
 // Game Phases
 const PHASES = {
@@ -594,7 +476,7 @@ function resetGame() {
   player.hp = 100;
 
   initStars();
-  startBattleMusic();
+  AudioEngine.startBattleMusic();
 
   requestAnimationFrame((timestamp) => {
     startTime = timestamp;
@@ -623,7 +505,7 @@ function continueToNextLevel() {
   asteroidBaseSpeed += 2;
   asteroidSpawnRate = Math.max(300, asteroidSpawnRate - 100);
 
-  startBattleMusic();
+  AudioEngine.startBattleMusic();
 
   requestAnimationFrame((timestamp) => {
     startTime = timestamp; // Reset timer for the new wave
@@ -749,7 +631,7 @@ function drawAsteroid(a, timestamp) {
 }
 
 function detonateBomb(x, y, timestamp) {
-  playBoom();
+  AudioEngine.playBoom();
   screenShakeFrames = 30;
 
   shockwaves.push({
@@ -825,11 +707,7 @@ function update(timestamp, dt) {
       };
 
       // Dim music during transition
-      if (audioCtx) {
-        currentPitchOffset = -1; // Drop octave
-        currentBpm = 156; // +30%
-        startBattleMusic();
-      }
+      AudioEngine.setBossTransitionMusic();
     }
   } else if (currentPhase === PHASES.BOSS_TRANSITION) {
     let timeInTransition = timestamp - bossTransitionStartTime;
@@ -854,7 +732,7 @@ function update(timestamp, dt) {
           setTimeout(() => {
             createBurst(boss.x + (Math.random()-0.5)*150, boss.y + (Math.random()-0.5)*150, '#f0f');
             createBurst(boss.x + (Math.random()-0.5)*150, boss.y + (Math.random()-0.5)*150, '#0ff');
-            playBoom();
+            AudioEngine.playBoom();
           }, i * 200);
         }
         screenShakeFrames = 50;
@@ -865,7 +743,7 @@ function update(timestamp, dt) {
           shopOverlay.style.display = 'flex';
           document.getElementById('shopGoldDisplay').innerText = `Gold: ${gold}`;
           checkShopButtons();
-          startShopMusic();
+          AudioEngine.startShopMusic();
         }, 1500);
       } else {
         // Boss Laser Attack
@@ -939,7 +817,7 @@ function update(timestamp, dt) {
     }
 
     flashFrames = 5;
-    playPew();
+    AudioEngine.playPew();
     lastShotTime = timestamp;
   }
 
@@ -977,7 +855,7 @@ function update(timestamp, dt) {
       score += 100;
       goldDisplay.innerText = `Gold: ${gold}`;
       scoreDisplay.innerText = `Score: ${score}`;
-      playLootSound();
+      AudioEngine.playLootSound();
       createPixelShatter(c.x, c.y, '#ffd700');
       coins.splice(i, 1);
     }
@@ -1002,12 +880,12 @@ function update(timestamp, dt) {
         }
         currentWeapon = d.weaponType;
         drawWpnIndicator();
-        playLootSound();
+        AudioEngine.playLootSound();
         createPixelShatter(d.x, d.y, '#ff0');
       } else if (d.type === 'life') {
         lives++;
         updateLivesDisplay();
-        playLootSound();
+        AudioEngine.playLootSound();
         createPixelShatter(d.x, d.y, '#f00'); // Neon Red shatter
       }
       drops.splice(i, 1);
@@ -1031,7 +909,7 @@ function update(timestamp, dt) {
         boss.hitFlashUntil = timestamp + 100;
         updateBossHpUI();
         lasers.splice(j, 1);
-        playBoom();
+        AudioEngine.playBoom();
         createBurst(l.x, l.y, '#f0f');
       }
     }
@@ -1127,7 +1005,7 @@ function update(timestamp, dt) {
       if (dx*dx + dy*dy < (ra.radius + a.radius) * (ra.radius + a.radius)) {
         createBurst(ra.x, ra.y, '#0ff');
         createBurst(a.x, a.y, a.color);
-        playBoom();
+        AudioEngine.playBoom();
         asteroids.splice(i, 1);
         reversedAsteroids.splice(r, 1);
         raDestroyed = true;
@@ -1145,7 +1023,7 @@ function update(timestamp, dt) {
         else {
           player.hpBarVisibleUntil = timestamp + 1000;
           invulnerableUntil = timestamp + 500;
-          playBoom();
+          AudioEngine.playBoom();
           createBurst(player.x, player.y, '#0ff');
         }
         reversedAsteroids.splice(r, 1);
@@ -1166,7 +1044,7 @@ function update(timestamp, dt) {
         boss.hitFlashUntil = timestamp + 100;
         updateBossHpUI();
         createBurst(ra.x, ra.y, '#0ff');
-        playBoom();
+        AudioEngine.playBoom();
         reversedAsteroids.splice(r, 1);
         continue;
       }
@@ -1242,7 +1120,7 @@ function update(timestamp, dt) {
 
         a.hp -= (1 * l.dmgMult);
         if (a.hp <= 0) {
-          playBoom();
+          AudioEngine.playBoom();
 
           if (a.radius === 50) score += 50;
           else if (a.radius === 35) score += 30;
@@ -1294,7 +1172,7 @@ function update(timestamp, dt) {
           player.hpBarVisibleUntil = timestamp + 1000;
           a.hitFlashUntil = timestamp + 100;
           invulnerableUntil = timestamp + 500;
-          playBoom();
+          AudioEngine.playBoom();
           createBurst(player.x, player.y, '#0ff');
         }
         break;
@@ -1307,7 +1185,7 @@ function update(timestamp, dt) {
   if (playerHit) {
     lives--;
     updateLivesDisplay();
-    playBoom();
+    AudioEngine.playBoom();
     screenShakeFrames = 20;
     createBurst(player.x, player.y, '#f00');
     asteroids = [];
@@ -1646,7 +1524,7 @@ document.querySelectorAll('.buy-btn').forEach(btn => {
         gold -= cost;
         document.getElementById('shopGoldDisplay').innerText = `Gold: ${gold}`;
         goldDisplay.innerText = `Gold: ${gold}`;
-        playLootSound();
+        AudioEngine.playLootSound();
         checkShopButtons();
       }
     }
@@ -1666,10 +1544,11 @@ let lastTimestamp = 0;
 let isPaused = false;
 
 startOverlay.addEventListener('click', () => {
-  initAudio();
+  AudioEngine.getState = () => ({ isPaused, isGameOver, currentPhase, PHASES });
+  AudioEngine.initAudio();
   startOverlay.style.display = 'none';
 
-  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  AudioEngine.resumeContext();
 
   drawWpnIndicator();
   updateInventoryUI();
